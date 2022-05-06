@@ -1,8 +1,9 @@
 #define CTEST_ENABLED
 #include "cprint.h"
 #include <math.h>
+#include <stdalign.h>
 
-
+// division by a constant utility.
 div_e magicu2(uint64_t d)
 {
     int64_t p;
@@ -323,11 +324,6 @@ tu_int __udivmodti4(tu_int a, tu_int b, tu_int *rem) {
 */
 
 
-int file_read_line(FILE *fd, char *buff, size_t s)
-{
-    return getline(&buff, &s, fd) != -1;
-}
-
 typedef enum cprint_type_t
 {
     UNDEFINED = 0,
@@ -337,7 +333,6 @@ typedef enum cprint_type_t
     INTEGER     = (int)'i',     // whole numbers
     REFERENCE   = (int)'r',     // reference to another type desc
 } cprint_type;
-
 
 typedef struct var_args_t
 {
@@ -405,12 +400,14 @@ static inline void *pop(iter_stack *st, size_t item_size)
     st->tail_addr -= cache_aligned;
     return t;
 }
+
 var_args* var_stack_push(iter_stack* stack, char* format, void* param)
 {
     var_args * item = push(&stack, sizeof(var_args));
     *item = (var_args){format, param};
     return item;
 }
+
 var_args* var_stack_pop(iter_stack* stack)
 {
     return (var_args*)(is_empty(stack) ? 0 : pop(stack, sizeof(var_args)));
@@ -425,18 +422,22 @@ int bnprintf(char* buff, size_t size, const char* format, ...)
 {
     return 0;
 }
+
 int cnprintf(char* buff, size_t size, const char* format, ...) 
 {
     return 0;
 }
 
-int cprintf(char* buff, size_t size, var_args* args) 
+
+int cprintf(char* buff, size_t size, var_args* initial_args) 
 {
     //
     iter_stack* istack = 0;
     int32_t error_code = 0;
     char* o_buff = buff;
     int8_t ch = 0;
+    int8_t val = 0;
+    var_args* args = initial_args;
     /*
         a compact alternative to printf.  
 
@@ -448,20 +449,24 @@ int cprintf(char* buff, size_t size, var_args* args)
 parse:
     ch = *args->format;
     {
+        // if we are trying to read beyond our buffer
         if((buff - o_buff) >= size)
         {
             goto error;
         }
-
+        // we are instructed to read a particular type
         if(ch == '%')
         {
+            // 
             ch = *++args->format;
             goto tokenize;
         }
         else if(ch == '\0')
         {
+            // we are at an end of a string.
             if(istack != 0)
             {
+                // we have nested formats
                 args = var_stack_pop(istack);
                 if(args == 0)
                 {
@@ -472,38 +477,38 @@ parse:
             {
                 goto end;
             }
-            
+            // don't put the null terminator at the end
+            goto parse; // loop    
         }
+        // pluck our character into the bufer and continue
         *buff++ = ch;
         ch = *++args->format;
         goto parse; // loop
     }
 tokenize:
-    {
-        cprint_type ct = UNDEFINED;
-        switch(ch)
-        {
-            case 'b':
-            case 'c':
-            case 'f':
-            case 'i':
-            case 'r':
-                ct = (cprint_type)ch;
-                ch = *++args->format;
-                break;
-            default:
-                goto error;
-        }
-
-        int8_t val = 0;
-        if(abs((int32_t)ch - (int32_t)'0') < 10)
+    {   
+        // what type do we want
+        cprint_type ct = ch;
+        // is it of a particular size
+        // if there is no number, we default to alignment
+        // % -- start reading type info
+        // %x|{y[z:w]} x : the type to read. {f i c s r b}
+        //  - optional y z w:
+        //      - y: the size of the element in bytes
+        //      - z: the number of elements to reads
+        //      - w: the character to insert between each element. ignored when formatting binary.
+        //          # controls representation layout.
+        //  params n,format,buffer
+        //  "%f4[: #.3#e#\n] %f8[2:#] %c2[120:#] %r[2: #\n]",
+        //   #.#
+        ch = *++args->format;
+        if(isnum(ch))
         {
             if(str_to_int8((char*)args->format, &val) != 0)
             {
                 goto error;
             }
         }
-        
         switch(ct)
         {
             case BUFFER:
@@ -511,46 +516,48 @@ tokenize:
                     void* buffer_ptr = get_param(args, void*);
                     int32_t buffer_size = *(int32_t*)get_param(args, int32_t);
                     buff += format_buffer(buff, buffer_ptr, buffer_size, 1, 1);
-                    break;
+                    goto parse;
                 }
             case CHARACTER:
                 {
                     int8_t c = *(int8_t*)get_param(args, int32_t);
                     buff += format_char(buff, c);
-                    break;
+                    goto parse;
                 }
             case FLOAT:
                 {
                     double d = *(double*)get_param(args, double);
                     buff += format_float64(buff, d);
-                    break;
+                    goto parse;
                 }
             case INTEGER:
                 {
                     int64_t d = *(int64_t*)get_param(args, int64_t);
                     buff += format_int64(buff, d);
-                    break;
+                    goto parse;
                 }
             case REFERENCE:
                 {
-                    char* new_format = (char*)get_param(args, char*);
-                    void* new_params = get_param(args, void*);
-                    // 2 va args
-                    if(!istack)
+                    char* new_format = *(char**)get_param(args, char*);
+                    void* new_params = *(void**)get_param(args, void*);
+                    if(new_params != 0)
                     {
-                        istack = create_iter_stack();
+                        if(!istack)
+                        {
+                            istack = create_iter_stack();
+                            var_stack_push(istack, args->format, args->params);
+                        }
+                        args = var_stack_push(istack, new_format, new_params);
                     }
-                    var_stack_push(istack, args->format, args->params);
-                    break;
+                    
+                    goto parse;
                 }
             default:
-                break;
-        }
-        // parse the va arg
-        goto parse;
+                goto error;
+        }   
     }
 error:
-
+    // print some descriptive error
 end:
     if(istack)
     {
@@ -561,21 +568,109 @@ end:
 
 int main()
 {
-    printf("%d\n", 0xfffffb4d);
+    /*
+    FILE* f = fopen("test.txt", "w");
+    const char* base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const int isbase64[128] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,
+                               0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+                               0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0};
+    //0xfff
+    //0x8000
+    
+    for(int i = 0; i < 128; i++)
+    {
+        fprintf(f, "\n");
+        for(int j = 0; j < 128; j++)
+        {
+            if(isbase64[i] && isbase64[j])
+            {
+                char c1 = i;
+                char c2 = j;
+                short c3 = (0x3f & c2) << 6 | ((0x3f) & c1);
+                fprintf(f, "0x%03X,", c3);
+            }
+            else
+            {
+                fprintf(f, "-1,");
+            }
+        }
+    }
+    
+    
+    for(int i = 0; i < 124; i++)
+    {
+        for(int j = 0; j < 124; j++)
+        {
+            char c1 = i;
+            char c2 = j;
+            short c3 = (0x3f & c2) << 6 | ((0x3f) & c1);
+        }
+    }
+
+    fclose(f);
+    */
+
+   /*
+    [ ] string to float/double
+        0
+        e
+        0.
+        1.
+        0.
+        0.e
+        .00000000000000000000e0
+        e123
+        e-
+        e+
+        e+
+        1.2r
+        1.333
+        sasdfasdf
+        1e1
+        123123123123123123123123123
+        0.00000000000000000000000000000000000
+        112312312
+    [ ] string to int
+    [ ] hex string to int
+    [ ] cprintf references
+    [ ] cprintf buffers
+    [ ] cprintf strings
+    [ ] cprintf floats
+    [ ] cprintf binary out
+    [ ] cprintf binary from text
+    [ ] perf compare
+        - string to type/type to string
+        - printf vs cprintf
+   */
+    
     char buffA[1024];
     char buffB[1024];
     int max = 0;
     int count = 0;
     int accum = 0;
+
     START_TEST(stream, {});
+
     struct local_args
     {
         double d;
         double f;
-        int a;
+        int64_t a;
+        char*r;
+        void*ref_p;
     };
-    struct local_args arguments = {2.0, 2.0, 2323};
-    var_args arg = {"%f %f %i\n", &arguments};
+
+    struct rlocal_args
+    {
+        double d;
+        double f;
+        double e;
+    };
+
+    struct rlocal_args rarguments = {1.2, 2.3, 3.4};
+    struct local_args arguments = {2.0, 2.0, 2323, "%f %f %f\n", &rarguments};
+
+    var_args arg = {"%f %f %i %r\n", &arguments};
     int32_t offset = cprintf(buffA, 1024, &arg);
     buffA[offset] = 0;
     printf("%s", buffA);

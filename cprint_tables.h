@@ -1442,5 +1442,4 @@ uint64_t power10_lookup[power10_lookup_size][2] = {
     {0xdb68c2ca82ed2a06, 0x000000000000042d},
     {0x892179be91d43a44, 0x0000000000000431}};
 
-// 3420 / 3
 #endif // _CPRINT_TABLES_H
