@@ -603,7 +603,7 @@ int main()
         - string to type/type to string
         - printf vs cprintf
     */
-    char* invalid_floats [] = {
+    char* sample_floats [] = {
         "",     // invalid
         " ",    // invalid
         "e",    // invalid
@@ -617,10 +617,7 @@ int main()
         "1.2r", // invalid
         "sasdfasdf", // invalid
         "\0",       // invalid
-    };
-
-    char* valid_floats [] = {
-        "1.e+1",
+        "1.e+1",    // valid
         "1e1",
         "123123123123123123123",
         "0.00000000000000000000000000000000000",
@@ -705,52 +702,58 @@ int main()
             int64_t d = strtol(buffA, &end, 10);
         }
     });
-    MEASURE_MS(format, str_to_flt, {
+    double f = 0.0;
+    MEASURE_MS(format, str_to_double, {
         for(int i = 0; i < 10000000; i++)
         {
-            double d = 0.0;
-            str_to_double("0.0101e-13", &d);
-            accum++;
+            str_to_double(sample_floats[i%22], &f);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
     
     MEASURE_MS(format, strtod, {
         for(int i = 0; i < 10000000; i++)
         {
-            double d = strtod("0.0101e-13", &end);
-            accum++;
+            double d = strtod(sample_floats[i%22], &end);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
-    MEASURE_MS(format, format_float_, {
+    MEASURE_MS(format, format_float, {
         for(int i = 0; i < 10000000; i++)
         {
             format_float64(buffA, 10000000.0/i);
-            accum++;
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
-    MEASURE_MS(format, format_snprintf_float_, {
+    MEASURE_MS(format, format_snprintf_float, {
         for(int i = 0; i < 10000000; i++)
         {
             sprintf(buffA, "%f", 10000000.0/i);   
-            accum++;
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
     
-    MEASURE_MS(format, format_int_4_, {
+    MEASURE_MS(format, format_int, {
         for(int i = 0; i < 10000000; i++)
         {
-            count = format_int(buffA, i);
-            accum++;
+            format_int(buffA, i);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
-
+    
     MEASURE_MS(format, format_snprintf, {
         for(int i = 0; i < 10000000; i++)
         {
             sprintf(buffA, "%d", i);   
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__(""); 
         }
     });
-    
     
     END_TEST(format, {});
    
