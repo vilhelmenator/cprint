@@ -627,6 +627,8 @@ int main()
         "1.e",
         "1,e+1212"
     };
+    int num_sample_floats = sizeof(sample_floats)/sizeof(char*);
+    
     /*
     int result = 0;
     for(int i = 0; i < 8; i++)
@@ -706,7 +708,7 @@ int main()
     MEASURE_MS(format, str_to_double, {
         for(int i = 0; i < 10000000; i++)
         {
-            str_to_double(sample_floats[i%22], &f);
+            str_to_double(sample_floats[i%num_sample_floats], &f);
             // prevent the optimizer from tossing these loops out.
             __asm__ __volatile__(""); 
         }
@@ -715,7 +717,7 @@ int main()
     MEASURE_MS(format, strtod, {
         for(int i = 0; i < 10000000; i++)
         {
-            double d = strtod(sample_floats[i%22], &end);
+            double d = strtod(sample_floats[i%num_sample_floats], &end);
             // prevent the optimizer from tossing these loops out.
             __asm__ __volatile__(""); 
         }
