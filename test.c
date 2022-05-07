@@ -4,6 +4,7 @@
 #include <stdalign.h>
 
 // division by a constant utility.
+/*
 div_e magicu2(uint64_t d)
 {
     int64_t p;
@@ -135,6 +136,7 @@ static div_e u64_gen(uint64_t d) {
     }
     return result;
 }
+*/
 /*
 unsigned long long udivdi3(unsigned long long u,
     unsigned long long v)
@@ -568,49 +570,8 @@ end:
 
 int main()
 {
+
     /*
-    FILE* f = fopen("test.txt", "w");
-    const char* base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    const int isbase64[128] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,
-                               0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-                               0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0};
-    //0xfff
-    //0x8000
-    
-    for(int i = 0; i < 128; i++)
-    {
-        fprintf(f, "\n");
-        for(int j = 0; j < 128; j++)
-        {
-            if(isbase64[i] && isbase64[j])
-            {
-                char c1 = i;
-                char c2 = j;
-                short c3 = (0x3f & c2) << 6 | ((0x3f) & c1);
-                fprintf(f, "0x%03X,", c3);
-            }
-            else
-            {
-                fprintf(f, "-1,");
-            }
-        }
-    }
-    
-    
-    for(int i = 0; i < 124; i++)
-    {
-        for(int j = 0; j < 124; j++)
-        {
-            char c1 = i;
-            char c2 = j;
-            short c3 = (0x3f & c2) << 6 | ((0x3f) & c1);
-        }
-    }
-
-    fclose(f);
-    */
-
-   /*
     [ ] string to float/double
         0
         e
@@ -641,16 +602,62 @@ int main()
     [ ] perf compare
         - string to type/type to string
         - printf vs cprintf
-   */
-    
+    */
+    char* invalid_floats [] = {
+        "",     // invalid
+        " ",    // invalid
+        "e",    // invalid
+        "0.",   // invalid
+        "1. ",   // invalid
+        " 1.e ",  // invalid
+        "0.e",  // invalid
+        "e123", // invalid
+        "e-",   // invalid
+        "e+",   // invalid
+        "1.2r", // invalid
+        "sasdfasdf", // invalid
+        "\0",       // invalid
+    };
+
+    char* valid_floats [] = {
+        "1.e+1",
+        "1e1",
+        "123123123123123123123",
+        "0.00000000000000000000000000000000000",
+        "112312312",
+        "1e+2",
+        "1e2",
+        "1.e",
+        "1,e+1212"
+    };
+    /*
+    int result = 0;
+    for(int i = 0; i < 8; i++)
+    {
+        double d = 0.0;
+        str_to_double(valid_floats[i], &d);
+        printf("%g\n", d);
+    }
+    */    
     char buffA[1024];
     char buffB[1024];
     int max = 0;
     int count = 0;
     int accum = 0;
 
-    START_TEST(stream, {});
-
+    START_TEST(format, {});
+    /*
+    TEST(format, str_to_double, {
+        int result = 0;
+        for(int i = 0; i < 14; i++)
+        {
+            double d = 0.0;
+            result |= str_to_double(invalid_floats[i], &d);
+        }
+        EXPECT(result == 0);
+    });
+    */
+   /*
     struct local_args
     {
         double d;
@@ -677,8 +684,9 @@ int main()
     float outy = 0.0f;
     str_to_float("0.1e-1", &outy);
     printf("%e\n", outy);
+    */
     int64_t d = 0;
-    MEASURE_MS(stream, str_to_int, {
+    MEASURE_MS(format, str_to_int, {
         for(int i = 0; i < 10000000; i++)
         {   
             int c = format_int(buffA, i);
@@ -689,7 +697,7 @@ int main()
     });
     
     char* end;
-    MEASURE_MS(stream, strtol, {
+    MEASURE_MS(format, strtol, {
         for(int i = 0; i < 10000000; i++)
         {
             int c = format_int(buffA, i);
@@ -697,7 +705,7 @@ int main()
             int64_t d = strtol(buffA, &end, 10);
         }
     });
-    MEASURE_MS(stream, str_to_flt, {
+    MEASURE_MS(format, str_to_flt, {
         for(int i = 0; i < 10000000; i++)
         {
             double d = 0.0;
@@ -706,21 +714,21 @@ int main()
         }
     });
     
-    MEASURE_MS(stream, strtod, {
+    MEASURE_MS(format, strtod, {
         for(int i = 0; i < 10000000; i++)
         {
             double d = strtod("0.0101e-13", &end);
             accum++;
         }
     });
-    MEASURE_MS(stream, format_float_, {
+    MEASURE_MS(format, format_float_, {
         for(int i = 0; i < 10000000; i++)
         {
             format_float64(buffA, 10000000.0/i);
             accum++;
         }
     });
-    MEASURE_MS(stream, format_snprintf_float_, {
+    MEASURE_MS(format, format_snprintf_float_, {
         for(int i = 0; i < 10000000; i++)
         {
             sprintf(buffA, "%f", 10000000.0/i);   
@@ -728,7 +736,7 @@ int main()
         }
     });
     
-    MEASURE_MS(stream, format_int_4_, {
+    MEASURE_MS(format, format_int_4_, {
         for(int i = 0; i < 10000000; i++)
         {
             count = format_int(buffA, i);
@@ -736,7 +744,7 @@ int main()
         }
     });
 
-    MEASURE_MS(stream, format_snprintf, {
+    MEASURE_MS(format, format_snprintf, {
         for(int i = 0; i < 10000000; i++)
         {
             sprintf(buffA, "%d", i);   
@@ -744,7 +752,7 @@ int main()
     });
     
     
-    END_TEST(stream, {});
+    END_TEST(format, {});
    
     return 0;
 }
