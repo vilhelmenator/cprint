@@ -13,14 +13,6 @@ typedef struct exfloat_t
     int16_t s; // sign
 } exfloat;
 
-// extended div operation to cache an approximate multiplier
-typedef struct div_e_t
-{
-    uint64_t m;
-    int32_t a;
-    int32_t s;
-} div_e;
-
 static inline int calc_digit_len(uint64_t value)
 {
     uint32_t num_digits = 1;
@@ -425,6 +417,7 @@ int32_t format_float64(char *buffer, double w)
 static size_t format_data(char *buffer, void *p, uint8_t s, size_t r,
     size_t c)
 {
+    // format a data buffer as an array of hexedecimal strings
     size_t num_cols = c;
     size_t num_chars = s * c * r * 2; // each bytes needs 2 hex digits
     size_t num_additional_chars = ((c - 1) * r) + r - 1; // space and newlines
@@ -482,6 +475,10 @@ size_t format_buffer(char *buffer, void *p, uint8_t s, size_t r, size_t c)
 
 size_t format_str(char *buffer, char *p, size_t l)
 {
+    // so, instead of reading a string byte by byte
+    // we want to read as big a chunk in each iteration as
+    // possible. On a 64 bit system that would be 8 bytes
+    // per iteration.
     if (l < 8) {
         for (int i = 0; i < l; i++) {
             *buffer++ = *(p + i);
@@ -528,6 +525,7 @@ size_t format_uint64(char *buffer, uint64_t c) { return format_int(buffer, c); }
 
 static inline int32_t isnum(int8_t ch)
 {
+    // is the char value a numeric one
     int32_t delta = ch - (int32_t)'0';
     if (delta >= 0 && delta < 10) {
         return 1;
@@ -535,6 +533,16 @@ static inline int32_t isnum(int8_t ch)
     return 0;
 }
 
+static inline int32_t ishexnum(int8_t ch)
+{
+    // is the char value a numeric one
+    if (ch >= 0 && ch <= MAX_HEX_CHAR_VAL) {
+        if (hex_values[ch] >= 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 static inline int prelude(char **buffer)
 {
     // eat up any whitespace
@@ -550,8 +558,68 @@ static inline int prelude(char **buffer)
     return 1;
 }
 
+static inline int hex_prelude(char **buffer)
+{
+    // eat up any whitespace
+    while (**buffer == ' ') {
+        (*buffer)++;
+    }
+
+    if (ishexnum((*buffer)[0])) {
+        // hex indicator
+        if ((*buffer)[0] == '0') {
+            if ((*buffer)[1] == 'x' || (*buffer)[1] == 'X') {
+                (*buffer) += 2;
+                return 0;
+            }
+        } else if (ishexnum((*buffer)[1])) {
+            // or just numbers
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static int32_t hex_to_int(char *buffer, uint64_t *out, size_t max_digits)
+{
+
+    uint64_t out_val = 0;
+    if (hex_prelude(&buffer) != 0) {
+        // not the start of a hex number
+        return -1;
+    }
+    int32_t num_chars = 0;
+    char ch = *buffer;
+    for (int32_t i = 0; i < max_digits; i++) {
+        if ((int)ch >= 0 && (int)ch <= MAX_HEX_CHAR_VAL) {
+            int8_t val = hex_values[ch];
+            if (val >= 0) {
+                out_val = (out_val << 4) + val;
+                ch = *++buffer;
+                num_chars++;
+            } else {
+                break;
+            }
+        }
+    }
+
+    if (num_chars == 0) {
+        // did not read any valid characters
+        return -1;
+    }
+    if (ch == '\0' || ch == ' ') {
+        // our string ended by a null terminator or space
+        *out = out_val;
+        return 0;
+    }
+    // our reading was terminated abruptly
+    return -1;
+}
+
 static int32_t str_to_int(char *buffer, int64_t *out, size_t max_digits)
 {
+    // eat up whitespace and sign
     int32_t sign = prelude(&buffer);
     int64_t out_val = 0;
     int32_t num_chars = 0;
@@ -562,22 +630,28 @@ static int32_t str_to_int(char *buffer, int64_t *out, size_t max_digits)
             out_val = (out_val * 10) + val;
             ch = *++buffer;
             num_chars++;
-
         } else {
             break;
         }
     }
 
     if (num_chars == 0) {
+        // did not read any valid characters
         return -1;
     }
-    out_val *= sign;
-    *out = out_val;
-    return 0;
+    if (ch == '\0' || ch == ' ') {
+        // our string ended by a null terminator or space
+        out_val *= sign;
+        *out = out_val;
+        return 0;
+    }
+    // our reading was terminated abruptly
+    return -1;
 }
 
 static int32_t str_to_exfloat(char *buffer, exfloat *out)
 {
+    // eat up whitespace and sign.
     int32_t sign = prelude(&buffer);
     int32_t comma_pos = -1;
     char ch = *buffer;
@@ -587,21 +661,28 @@ static int32_t str_to_exfloat(char *buffer, exfloat *out)
     int64_t exponent = 0;
     int32_t offset = 0;
     exfloat exval;
+    // read till the end
     do {
         int32_t val = ch - (int32_t)'0';
         if (val >= 0 && val < 10) {
+            // while we are reading numbers.
             if (num_chars < 19) {
+                // we can't really compute larger than 19 digits without
+                // moving into 128 bit numbers... and we are converting to floating point
                 fractional_val = (fractional_val * 10) + val;
                 if (fractional_val) {
                     num_chars++;
                 }
             } else {
+                // increase our exponent by each number beyound our scope
                 exponent++;
             }
             num_chars_read++;
         } else {
+            // are we at the end of our number
             if (ch == '\0' || ch == ' ') {
                 if (num_chars_read) {
+                    // we have just read zero, so we reaturn zero.
                     if (fractional_val == 0) {
                         *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO };
                         return 0;
@@ -611,40 +692,53 @@ static int32_t str_to_exfloat(char *buffer, exfloat *out)
                     goto err;
                 }
             } else if (ch == '.' || ch == ',') {
+                // have we read a comma value before
                 if (comma_pos > 0) {
                     goto err;
                 }
+                // store the first comma sep we see
                 comma_pos = num_chars_read;
             } else if (ch == 'e' || ch == 'E') {
-                goto read_exponent;
+                // if we have read any numeric values
+                if (num_chars_read) {
+                    goto read_exponent;
+                } else {
+                    goto err;
+                }
             } else {
                 goto err;
             }
         }
         ch = *++buffer;
     } while (1);
-
+    // if the accumulated number is zero.
     if (fractional_val == 0) {
         *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO };
         return 0;
     }
 read_exponent:
+    // read at most 4 numbers...
     if (str_to_int(++buffer, (int64_t *)&exponent, 4) != 0) {
         goto err;
     }
+    // doubles can't store larger than 1023 as exponent
     if (exponent > 1023) {
         *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_INF : FLTEX_POS_INF };
         return 0;
     }
 gen_float:
+    // offset our exponent by our comma position
     if (comma_pos >= 0) {
         exponent -= (num_chars_read - comma_pos);
     }
+    // construct our custom floating point format.
     exval = exfloat_construct(fractional_val, 0, sign == -1);
+    // get our cached power of 10 from the lookup table.
     exfloat c_mk = cached_power(exponent);
+    // multiply and update exponent
     exfloat D = multiply_exfloat(&exval, &c_mk);
 
-    // normalize the results.
+    // normalize the results, so that there are no leading zeroes.
     int32_t shift = __builtin_clzll(D.f);
     D.f <<= shift;
     D.e -= shift;

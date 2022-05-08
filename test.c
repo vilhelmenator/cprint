@@ -3,6 +3,19 @@
 #include <math.h>
 #include <stdalign.h>
 
+int32_t clzll(uint64_t ll)
+{
+    return ll == 0? 64 : __builtin_clzll(ll);
+}
+
+// extended div operation to cache an approximate multiplier
+typedef struct div_e_t
+{
+    uint64_t m;
+    int32_t a;
+    int32_t s;
+} div_e;
+
 // division by a constant utility.
 /*
 div_e magicu2(uint64_t d)
@@ -570,30 +583,12 @@ end:
 
 int main()
 {
-
+    const char * hex = "0123456789abcdefABCDEF";
     /*
-    [ ] string to float/double
-        0
-        e
-        0.
-        1.
-        0.
-        0.e
-        .00000000000000000000e0
-        e123
-        e-
-        e+
-        e+
-        1.2r
-        1.333
-        sasdfasdf
-        1e1
-        123123123123123123123123123
-        0.00000000000000000000000000000000000
-        112312312
-    [ ] string to int
-    [ ] hex string to int
-    [ ] cprintf references
+
+    [x] string to int
+    [x] hex string to int
+    [x] cprintf references
     [ ] cprintf buffers
     [ ] cprintf strings
     [ ] cprintf floats
@@ -602,7 +597,9 @@ int main()
     [ ] perf compare
         - string to type/type to string
         - printf vs cprintf
+    
     */
+    
     char* sample_floats [] = {
         "",     // invalid
         " ",    // invalid
@@ -625,19 +622,45 @@ int main()
         "1e+2",
         "1e2",
         "1.e",
-        "1,e+1212"
+        "-1,e+1212"
+    };
+
+    char* sample_ints [] = {
+        "",     // invalid
+        " ",    // invalid
+        "01",    // invalid
+        "-256.",   // invalid
+        " 12",   // invalid
+        "\0",  // invalid
+        "z", // invalid
+        "sasdfasdf", // invalid
+        "123123123123123123123",
+        "000000000000000000000000000000000000",
+        "112312312",
+        "0x1",
+        "0x0",
+        "0xff",
+        "ffab01"
     };
     int num_sample_floats = sizeof(sample_floats)/sizeof(char*);
+    int num_sample_ints = sizeof(sample_ints)/sizeof(char*);
     
     /*
     int result = 0;
-    for(int i = 0; i < 8; i++)
+    for(int i = 0; i < num_sample_floats; i++)
     {
         double d = 0.0;
-        str_to_double(valid_floats[i], &d);
+        str_to_double(sample_floats[i], &d);
         printf("%g\n", d);
     }
-    */    
+    printf("\n");
+    for(int i = 0; i < num_sample_ints; i++)
+    {
+        int64_t d = 0;
+        str_to_int(sample_ints[i], &d, 19);
+        printf("%lld\n", d);
+    }
+    */
     char buffA[1024];
     char buffB[1024];
     int max = 0;
@@ -691,7 +714,7 @@ int main()
             int c = format_int(buffA, i);
             buffA[c] = 0;
             str_to_int(buffA, &d, 10);
-            accum++;
+            __asm__ __volatile__(""); 
         }
     });
     
@@ -702,6 +725,7 @@ int main()
             int c = format_int(buffA, i);
             buffA[c] = 0;
             int64_t d = strtol(buffA, &end, 10);
+            __asm__ __volatile__(""); 
         }
     });
     double f = 0.0;
