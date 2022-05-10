@@ -349,21 +349,25 @@ typedef struct var_args_t
     void* params;
 } var_args;
 
-var_args _construct_var_args(char* format, size_t s, ...)
+var_args* _construct_var_args(char* format, size_t s, ...)
 {
-    var_args res;
-    res.format = format;
-    res.num_args = s;
-    res.params = (void*)malloc(s*sizeof(void*));
-    uint64_t* ref = (uint64_t*)res.params;
+    var_args* res = (var_args*)malloc(sizeof(var_args) + (s * sizeof(void*)));
+    
+    res->format = format;
+    res->num_args = s;
+    res->params = &res->params + sizeof(void*);
+    void** params = (void**)res->params;
     va_list ap;
     va_start(ap, s);
-    while (s--)
-        ref = (void*)va_arg(ap, void*);
-        ref++;
+    for(int i = 0; i < s; i++)
+    {
+        params[i] = va_arg(ap, void*);
+    }
+        
     va_end(ap);
     return res;
 }
+
 #define _construct_var_args(format, ...) _construct_var_args(format, NARGS(__VA_ARGS__), __VA_ARGS__)
 
 void* next_param(var_args*a, size_t s)
@@ -372,6 +376,7 @@ void* next_param(var_args*a, size_t s)
     a->params += s;
     return current_addr;
 }
+
 #define get_param(args, type) next_param(args, sizeof(type))
 
 typedef enum cprint_type_t
@@ -610,8 +615,8 @@ end:
 int main()
 {
     const char * hex = "0123456789abcdefABCDEF";
-    var_args va = _construct_var_args("%d", 1,2,3,4);
-    printf("%zu\n", va.num_args);
+    var_args*va = _construct_var_args("%d", 1,2,3,4);
+    printf("%zu\n", va->num_args);
     return 0;
     /*
 
