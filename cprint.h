@@ -5,6 +5,46 @@
 #include "../ctest/ctest.h"
 CLOGGER(_CPRINT_H, 4096)
 
+enum {
+    U = 0x01, /* upper case */
+    L = 0x02, /* lower case */
+    C = 0x04, /* control */
+    D = 0x08, /* decimal */
+    X = 0x10, /* hex letter */
+    P = 0x20, /* punctuation */
+    S = 0x40, /* space */
+    G = 0x80  /* graph */
+};
+static int8_t ctypes[128] = {
+    C,         C,         C,         C,         C,         C,         C,
+    C,         C,         C | S,     C | S,     C | S,     C | S,     C | S,
+    C,         C,         C,         C,         C,         C,         C,
+    C,         C,         C,         C,         C,         C,         C,
+    C,         C,         C,         C,         S,         G | P,     G | P,
+    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | P,
+    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | D,
+    G | D,     G | D,     G | D,     G | D,     G | D,     G | D,     G | D,
+    G | D,     G | D,     G | P,     G | P,     G | P,     G | P,     G | P,
+    G | P,     G | P,     G | U | X, G | U | X, G | U | X, G | U | X, G | U | X,
+    G | U | X, G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
+    G | U,     G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
+    G | U,     G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
+    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | L | X,
+    G | L | X, G | L | X, G | L | X, G | L | X, G | L | X, G | L,     G | L,
+    G | L,     G | L,     G | L,     G | L,     G | L,     G | L,     G | L,
+    G | L,     G | L,     G | L,     G | L,     G | L,     G | L,     G | L,
+    G | L,     G | L,     G | L,     G | L,     G | P,     G | P,     G | P,
+    G | P,     C,
+};
+int isalnum(int c) { return 0 != (ctypes[c & 127] & (D | U | L)); }
+int isalpha(int c) { return 0 != (ctypes[c & 127] & (U | L)); }
+int iscntrl(int c) { return 0 != (ctypes[c & 127] & C); }
+int isdigit(int c) { return 0 != (ctypes[c & 127] & D); }
+int isgraph(int c) { return 0 != (ctypes[c & 127] & G); }
+int islower(int c) { return 0 != (ctypes[c & 127] & L); }
+int isprint(int c) { return c == ' ' || isgraph(c); }
+int ispunct(int c) { return 0 != (ctypes[c & 127] & P); }
+
 // Extended floating point struct for extended math ops
 typedef struct exfloat_t
 {
@@ -91,7 +131,7 @@ typedef enum float_class_t {
 static inline exfloat cached_power(int index)
 {
     uint64_t *lookup = power10_lookup[index + power10_zero_offset];
-    return (exfloat) { lookup[0], lookup[1], 0 };
+    return (exfloat){lookup[0], lookup[1], 0};
 }
 
 static exfloat double2exfloat(double d)
@@ -99,20 +139,20 @@ static exfloat double2exfloat(double d)
     uint64_t bits = *((uint64_t *)&d);
     switch (bits) {
     case 0x0:
-        return (exfloat) { 0, 0, FLTEX_POS_ZERO };
+        return (exfloat){0, 0, FLTEX_POS_ZERO};
     case 0x8000000000000000:
-        return (exfloat) { 0, 0, FLTEX_NEG_ZERO };
+        return (exfloat){0, 0, FLTEX_NEG_ZERO};
     case 0x7FF0000000000000:
-        return (exfloat) { 0, FLTEX_POS_INF };
+        return (exfloat){0, FLTEX_POS_INF};
     case 0xFFF0000000000000:
-        return (exfloat) { 0, FLTEX_NEG_INF };
+        return (exfloat){0, FLTEX_NEG_INF};
     case 0x7FF0000000000001:
     case 0x7FF8000000000001:
     case 0x7FFFFFFFFFFFFFFF:
     case 0xFFF0000000000001:
     case 0xFFF8000000000001:
     case 0xFFFFFFFFFFFFFFFF:
-        return (exfloat) { 0, 0, FLTEX_NAN };
+        return (exfloat){0, 0, FLTEX_NAN};
     default:
         break;
     }
@@ -129,20 +169,20 @@ static exfloat float2exfloat(float d)
     uint32_t bits = *((uint32_t *)&d);
     switch (bits) {
     case 0x0:
-        return (exfloat) { 0, 0, FLTEX_POS_ZERO };
+        return (exfloat){0, 0, FLTEX_POS_ZERO};
     case 0x80000000:
-        return (exfloat) { 0, 0, FLTEX_NEG_ZERO };
+        return (exfloat){0, 0, FLTEX_NEG_ZERO};
     case 0x7F800000:
-        return (exfloat) { 0, 0, FLTEX_POS_INF };
+        return (exfloat){0, 0, FLTEX_POS_INF};
     case 0xFF800000:
-        return (exfloat) { 0, 0, FLTEX_NEG_INF };
+        return (exfloat){0, 0, FLTEX_NEG_INF};
     case 0xFFC00001:
     case 0xFF800001:
     case 0x7FFFFFFF:
     case 0xFFF00001:
     case 0xFFF80001:
     case 0xFFFFFFFF:
-        return (exfloat) { 0, 0, FLTEX_NAN };
+        return (exfloat){0, 0, FLTEX_NAN};
     default:
         break;
     }
@@ -414,8 +454,7 @@ int32_t format_float64(char *buffer, double w)
     return format_float_ex(dw, buffer);
 }
 
-static size_t format_data(char *buffer, void *p, uint8_t s, size_t r,
-    size_t c)
+static size_t format_data(char *buffer, void *p, uint8_t s, size_t r, size_t c)
 {
     // format a data buffer as an array of hexedecimal strings
     size_t num_cols = c;
@@ -668,7 +707,8 @@ static int32_t str_to_exfloat(char *buffer, exfloat *out)
             // while we are reading numbers.
             if (num_chars < 19) {
                 // we can't really compute larger than 19 digits without
-                // moving into 128 bit numbers... and we are converting to floating point
+                // moving into 128 bit numbers... and we are converting to
+                // floating point
                 fractional_val = (fractional_val * 10) + val;
                 if (fractional_val) {
                     num_chars++;
@@ -684,7 +724,8 @@ static int32_t str_to_exfloat(char *buffer, exfloat *out)
                 if (num_chars_read) {
                     // we have just read zero, so we reaturn zero.
                     if (fractional_val == 0) {
-                        *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO };
+                        *out = (exfloat){
+                            0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO};
                         return 0;
                     }
                     goto gen_float;
@@ -713,7 +754,7 @@ static int32_t str_to_exfloat(char *buffer, exfloat *out)
     } while (1);
     // if the accumulated number is zero.
     if (fractional_val == 0) {
-        *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO };
+        *out = (exfloat){0, 0, sign < 0 ? FLTEX_NEG_ZERO : FLTEX_POS_ZERO};
         return 0;
     }
 read_exponent:
@@ -723,7 +764,7 @@ read_exponent:
     }
     // doubles can't store larger than 1023 as exponent
     if (exponent > 1023) {
-        *out = (exfloat) { 0, 0, sign < 0 ? FLTEX_NEG_INF : FLTEX_POS_INF };
+        *out = (exfloat){0, 0, sign < 0 ? FLTEX_NEG_INF : FLTEX_POS_INF};
         return 0;
     }
 gen_float:
