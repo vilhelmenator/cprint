@@ -5,12 +5,12 @@
 #include <math.h>
 #include <stdalign.h>
 #include <stdlib.h>
+#include "../allocator/libinclude.h"
 int32_t clzll(uint64_t ll) { return ll == 0 ? 64 : __builtin_clzll(ll); }
 unsigned long strlen(const char *s)
 {
     char *p;
-    for (p = (char *)s; *p; p++)
-        ;
+    for (p = (char *)s; *p; p++);
     return p - s;
 }
 
@@ -48,7 +48,7 @@ typedef struct var_args_t
 
 var_args *_construct_var_args(char *format, size_t s, ...)
 {
-    var_args *res = (var_args *)malloc(sizeof(var_args) + (s * sizeof(void *)));
+    var_args *res = (var_args *)cmalloc(sizeof(var_args) + (s * sizeof(void *)));
 
     res->format = format;
     res->num_args = s;
@@ -101,7 +101,7 @@ typedef struct iter_stack_t
 
 static inline iter_stack *create_iter_stack()
 {
-    iter_stack *new_stack = (iter_stack *)malloc(allocation_step);
+    iter_stack *new_stack = (iter_stack *)cmalloc(allocation_step);
     *new_stack = (iter_stack){(uintptr_t)new_stack + allocation_step,
                               (uintptr_t)new_stack};
     return new_stack;
@@ -276,7 +276,7 @@ error:
     // print some descriptive error
 end:
     if (istack) {
-        free(istack);
+        cfree(istack);
     }
     return buff - o_buff;
 }

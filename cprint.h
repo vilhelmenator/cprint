@@ -2,45 +2,6 @@
 #define _CPRINT_H
 #include "cprint_tables.h"
 #include <stdlib.h>
-enum {
-    U = 0x01, /* upper case */
-    L = 0x02, /* lower case */
-    C = 0x04, /* control */
-    D = 0x08, /* decimal */
-    X = 0x10, /* hex letter */
-    P = 0x20, /* punctuation */
-    S = 0x40, /* space */
-    G = 0x80  /* graph */
-};
-static int8_t ctypes[128] = {
-    C,         C,         C,         C,         C,         C,         C,
-    C,         C,         C | S,     C | S,     C | S,     C | S,     C | S,
-    C,         C,         C,         C,         C,         C,         C,
-    C,         C,         C,         C,         C,         C,         C,
-    C,         C,         C,         C,         S,         G | P,     G | P,
-    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | P,
-    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | D,
-    G | D,     G | D,     G | D,     G | D,     G | D,     G | D,     G | D,
-    G | D,     G | D,     G | P,     G | P,     G | P,     G | P,     G | P,
-    G | P,     G | P,     G | U | X, G | U | X, G | U | X, G | U | X, G | U | X,
-    G | U | X, G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
-    G | U,     G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
-    G | U,     G | U,     G | U,     G | U,     G | U,     G | U,     G | U,
-    G | P,     G | P,     G | P,     G | P,     G | P,     G | P,     G | L | X,
-    G | L | X, G | L | X, G | L | X, G | L | X, G | L | X, G | L,     G | L,
-    G | L,     G | L,     G | L,     G | L,     G | L,     G | L,     G | L,
-    G | L,     G | L,     G | L,     G | L,     G | L,     G | L,     G | L,
-    G | L,     G | L,     G | L,     G | L,     G | P,     G | P,     G | P,
-    G | P,     C,
-};
-int isalnum(int c) { return 0 != (ctypes[c & 127] & (D | U | L)); }
-int isalpha(int c) { return 0 != (ctypes[c & 127] & (U | L)); }
-int iscntrl(int c) { return 0 != (ctypes[c & 127] & C); }
-int isdigit(int c) { return 0 != (ctypes[c & 127] & D); }
-int isgraph(int c) { return 0 != (ctypes[c & 127] & G); }
-int islower(int c) { return 0 != (ctypes[c & 127] & L); }
-int isprint(int c) { return c == ' ' || isgraph(c); }
-int ispunct(int c) { return 0 != (ctypes[c & 127] & P); }
 
 // Extended floating point struct for extended math ops
 typedef struct exfloat_t
