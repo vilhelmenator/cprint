@@ -1,10 +1,7 @@
 #ifndef _CPRINT_H
 #define _CPRINT_H
 #include "cprint_tables.h"
-
-#include "../ctest/ctest.h"
-CLOGGER(_CPRINT_H, 4096)
-
+#include <stdlib.h>
 enum {
     U = 0x01, /* upper case */
     L = 0x02, /* lower case */
