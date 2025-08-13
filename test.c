@@ -6,14 +6,13 @@
 #include <stdalign.h>
 #include <stdlib.h>
 #include "../allocator/libinclude.h"
-int32_t clzll(uint64_t ll) { return ll == 0 ? 64 : __builtin_clzll(ll); }
+
 unsigned long strlen(const char *s)
 {
     char *p;
     for (p = (char *)s; *p; p++);
     return p - s;
 }
-
 
 /* This counts the number of args */
 #define NARGS_SEQ(                                                             \
@@ -83,6 +82,7 @@ typedef enum cprint_type_t {
     FLOAT = (int)'f',     // fractions
     INTEGER = (int)'i',   // whole numbers
     REFERENCE = (int)'r', // reference to another type desc
+    STRING = (int)'s',    // string of characters
 } cprint_type;
 
 // recursion utils
@@ -163,6 +163,7 @@ int var_args_test(char *buff, ...)
     printf("%d\n", nargs);
     return 0;
 }
+
 int cprintf(char *buff, size_t size, var_args *initial_args)
 {
     //
@@ -177,7 +178,7 @@ int cprintf(char *buff, size_t size, var_args *initial_args)
 
         The format buffer has a limit on size.
 
-        A.  Construct a scehma buffer from the format description.
+        A.  Construct a schema buffer from the format description.
         B.  Are we building a binary buffer or a textual one.
     */
 parse:
@@ -227,12 +228,27 @@ tokenize : {
     //  params n,format,buffer
     //  "%f4[: #.3#e#\n] %f8[2:#] %c2[120:#] %r[2: #\n]",
     //   #.#
+    int width = 0, precision = -1;
+
+    // Parse width (digits before '.' or type)
     ch = *++args->format;
-    if (isnum(ch)) {
-        if (str_to_int8((char *)args->format, &val) != 0) {
-            goto error;
+    while (ch >= '0' && ch <= '9') {
+        width = width * 10 + (ch - '0');
+        ch = *++args->format;
+    }
+
+    // Parse precision (if present)
+    if (ch == '.') {
+        precision = 0;
+        ch = *++args->format;
+        while (ch >= '0' && ch <= '9') {
+            precision = precision * 10 + (ch - '0');
+            ch = *++args->format;
         }
     }
+    ct = ch;
+    ch = *++args->format;
+    
     switch (ct) {
     case BUFFER: {
         void *buffer_ptr = get_param(args, void *);
@@ -247,12 +263,12 @@ tokenize : {
     }
     case FLOAT: {
         double d = *(double *)get_param(args, double);
-        buff += format_float64(buff, d);
+        buff += format_float64_width(buff, d, width, precision);
         goto parse;
     }
     case INTEGER: {
         int64_t d = *(int64_t *)get_param(args, int64_t);
-        buff += format_int64(buff, d);
+        buff += format_int64_width(buff, d, width);
         goto parse;
     }
     case REFERENCE: {
@@ -266,6 +282,12 @@ tokenize : {
             args = var_stack_push(istack, new_format, new_params);
         }
 
+        goto parse;
+    }
+    case STRING: {
+        char *str = *(char **)get_param(args, char *);
+        size_t len = strlen(str);
+        buff += format_str_width(buff, str, len, width);
         goto parse;
     }
     default:
@@ -408,6 +430,28 @@ int main()
      str_to_float("0.1e-1", &outy);
      printf("%e\n", outy);
      */
+    struct local_args
+     {
+         double d;
+         double f;
+         int64_t a;
+         char*r;
+         void*ref_p;
+     };
+
+     struct rlocal_args
+     {
+         double d;
+         double f;
+         double e;
+     };
+    struct rlocal_args rarguments = {1.2, 2.3, 3.4};
+    struct local_args arguments = {2.0, 2.0, 2323, "%f %f %f\n", &rarguments};
+    var_args arg = {"%f %f %i %r\n", 4, &arguments};
+    int32_t offset = cprintf(buffA, 1024, &arg);
+
+    printf("%s", buffA);
+
     int64_t d = 0;
     MEASURE_TIME(format, str_to_int, {
         for (int i = 0; i < 10000000; i++) {

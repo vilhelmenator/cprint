@@ -1,0 +1,1 @@
+clang -O3 -march=native -flto=thin -fomit-frame-pointer -fno-exceptions -fno-rtti -fvisibility=hidden   -mno-red-zone -ftls-model=initial-exec -Wl,-O3 -Wl  -DNDEBUG -g0  -o test  *.c 

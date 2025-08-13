@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "ctest.h": "c"
+        "ctest.h": "c",
+        "libinclude.h": "c"
     }
 }

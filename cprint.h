@@ -2,7 +2,10 @@
 #define _CPRINT_H
 #include "cprint_tables.h"
 #include <stdlib.h>
-
+#include <string.h>
+#define MAX(x, y) (x ^ ((x ^ y) & -(x < y)))
+#define MIN(x, y) (y ^ ((x ^ y) & -(x < y)))
+#define MAX_INT_DIGITS 20
 // Extended floating point struct for extended math ops
 typedef struct exfloat_t
 {
@@ -24,13 +27,13 @@ static inline int calc_digit_len(uint64_t value)
     return num_digits;
 }
 
-uint64_t format_int(char *output, uint64_t value)
+
+static inline uint64_t _format_int(char *output, uint64_t value, int32_t num_digits)
 {
-    const int32_t num_digits = calc_digit_len(value);
     const char *src_ptr = output;
     int8_t *num_str = 0;
     uint64_t new_val = value;
-    output += (num_digits);
+    output += num_digits;
 start:
     switch ((output - src_ptr)) {
     case 0:
@@ -65,17 +68,58 @@ start:
     }
     return num_digits;
 }
+uint64_t format_int(char *output, uint64_t value)
+{
+    const int32_t max_digits = calc_digit_len(value);
+    return _format_int(output, value, max_digits);
+
+}
+uint64_t format_int_truncate(char *output, uint64_t value, uint32_t num_digits)
+{
+    const int32_t max_digits = MIN(calc_digit_len(value), num_digits);
+    return _format_int(output, value, max_digits);
+}
+
+uint64_t format_int_width(char *output, uint64_t value, int32_t width)
+{
+    uint64_t num_dig = format_int(output, value);
+    if (width > 0) {
+        int32_t padding = width - num_dig;
+        if (padding > 0) {
+            memmove(output - padding, output, num_dig);
+            memset(output - padding, '0', padding);
+            output -= padding;
+        }
+    }
+    return num_dig;
+}
+uint64_t format_sint_width(char *output, int64_t value, int32_t width)
+{
+    if (value < 0) {
+        *--output = '-';
+    }
+    uint64_t num_dig = (value < 0) + (format_int(output, llabs(value)));
+    if (width > 0) {
+        int32_t padding = width - num_dig;
+        if (padding > 0) {
+            memmove(output - padding, output, num_dig);
+            memset(output - padding, '0', padding);
+            output -= padding;
+        }
+    }
+    return num_dig;
+}
 
 uint64_t format_sint(char *output, int64_t value)
 {
     if (value < 0) {
         *--output = '-';
     }
-    return format_int(output, llabs(value)) + (value < 0);
+    return (value < 0) + (format_int(output, llabs(value)));
 }
 
 #define D_1_LOG2_10 0.30102999566398114 // 1/lg(10)
-#define D_1_LOG10_2 = 0x4d104d427de7fbcc
+#define D_1_LOG10_2 0x4d104d427de7fbcc
 typedef enum float_class_t {
     FLTEX_DEFAULT = 0,
     FLTEX_SDEFAULT = 1,
@@ -287,7 +331,7 @@ static int cut(exfloat D, uint32_t parts[3])
     return num_digits;
 }
 
-static int32_t format_float_grisu(exfloat w, char *buffer)
+static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_t precision)
 {
     uint32_t ps[3];
     int q = 64, alpha = 0, gamma = 3;
@@ -328,9 +372,29 @@ static int32_t format_float_grisu(exfloat w, char *buffer)
             for (int i = 1; i < -e; i++) {
                 *buffer++ = '0';
             }
-            for (int i = 0; i < 1; i++) {
-                buffer += format_int(buffer, ps[i]);
+            if(precision >= 0) {
+                // Print up to 'precision' digits after decimal
+                int digits_written = 0;
+                for (int i = 0; i < 1 && digits_written < precision; i++) {
+                    int len = format_int(buffer, ps[i]);
+                    if (len > precision - digits_written)
+                        len = precision - digits_written;
+                    buffer += len;
+                    digits_written += len;
+                }
+                // Pad with zeros if needed
+                while (digits_written < precision) {
+                    *buffer++ = '0';
+                    digits_written++;
+                }
             }
+            else
+            {
+                for (int i = 0; i < 1; i++) {
+                    buffer += format_int(buffer, ps[i]);
+                }    
+            }
+            
         } else {
             // numbers larger than 10.
             int cl = calc_digit_len(ps[0]);
@@ -359,16 +423,34 @@ static int32_t format_float_grisu(exfloat w, char *buffer)
                 partb = ps[0] - parta * 100000;
                 break;
             }
-            buffer += format_int(buffer, parta);
-            *buffer++ = '.';
-            buffer += format_int(buffer, partb);
+            buffer += format_int_width(buffer, parta, width);
+            
+            if(precision >= 0)
+            {
+                if(partb == 0 && precision == 0) {
+                    // No decimal point if no fractional part
+                    return buffer - buffer_start + w.s;
+                }
+                *buffer++ = '.';
+                buffer += format_int_truncate(buffer, partb, precision);
+                // Pad with zeros if needed
+                while (buffer - buffer_start < precision) {
+                    *buffer++ = '0';
+                }
+            }
+            else
+            {   
+                *buffer++ = '.';
+                buffer += format_int(buffer, partb);
+            }
+            
         }
     }
 
     return buffer - buffer_start + w.s;
 }
 
-static inline int32_t format_float_ex(exfloat w, char *buffer)
+static inline int32_t format_float_ex(exfloat w, char *buffer, int32_t width, int32_t precision)
 {
     if (w.s >= FLTEX_POS_INF) {
         switch (w.s) {
@@ -397,19 +479,25 @@ static inline int32_t format_float_ex(exfloat w, char *buffer)
             return 3;
         };
     }
-    return format_float_grisu(w, buffer);
+    return format_float_grisu(w, buffer, width, precision);
 }
 
 int32_t format_float32(char *buffer, float w)
 {
     exfloat fw = float2exfloat(w);
-    return format_float_ex(fw, buffer);
+    return format_float_ex(fw, buffer, -1, -1);
 }
 
 int32_t format_float64(char *buffer, double w)
 {
     exfloat dw = double2exfloat(w);
-    return format_float_ex(dw, buffer);
+    return format_float_ex(dw, buffer, -1, -1);
+}
+
+int32_t format_float64_prec(char *buffer, double w, int32_t width, int32_t precision)
+{
+    exfloat dw = double2exfloat(w);
+    return format_float_ex(dw, buffer, width, precision);
 }
 
 static size_t format_data(char *buffer, void *p, uint8_t s, size_t r, size_t c)
@@ -498,6 +586,20 @@ size_t format_str(char *buffer, char *p, size_t l)
     return l;
 }
 
+size_t format_str_width(char *buffer, char *p, size_t l, int32_t width)
+{
+    size_t num_written = format_str(buffer, p, l);
+    if (width > 0) {
+        int32_t padding = width - num_written;
+        if (padding > 0) {
+            memmove(buffer - padding, buffer, num_written);
+            memset(buffer - padding, ' ', padding);
+            buffer -= padding;
+        }
+    }
+    return num_written + (width > 0 ? width : 0);
+}
+
 size_t format_char(char *buffer, char c)
 {
     *buffer++ = c;
@@ -517,6 +619,8 @@ size_t format_int32(char *buffer, int32_t c) { return format_sint(buffer, c); }
 size_t format_uint32(char *buffer, uint32_t c) { return format_int(buffer, c); }
 
 size_t format_int64(char *buffer, int64_t c) { return format_sint(buffer, c); }
+
+size_t format_int64_width(char *buffer, int64_t c, int32_t width) { return format_sint_width(buffer, c, width); }
 
 size_t format_uint64(char *buffer, uint64_t c) { return format_int(buffer, c); }
 
