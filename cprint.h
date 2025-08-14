@@ -72,48 +72,33 @@ uint64_t format_int(char *output, uint64_t value)
 {
     const int32_t max_digits = calc_digit_len(value);
     return _format_int(output, value, max_digits);
-
-}
-uint64_t format_int_truncate(char *output, uint64_t value, uint32_t num_digits)
-{
-    const int32_t max_digits = MIN(calc_digit_len(value), num_digits);
-    return _format_int(output, value, max_digits);
 }
 
 uint64_t format_int_width(char *output, uint64_t value, int32_t width)
 {
-    uint64_t num_dig = format_int(output, value);
-    if (width > 0) {
-        int32_t padding = width - num_dig;
-        if (padding > 0) {
-            memmove(output - padding, output, num_dig);
-            memset(output - padding, '0', padding);
-            output -= padding;
-        }
+    const int32_t max_digits = calc_digit_len(value);
+    if(width > max_digits)
+    {
+        memset(output, '0', width-max_digits);
+        output += width - max_digits;
     }
-    return num_dig;
+    
+    uint64_t num_dig = _format_int(output, value, max_digits);
+    return MAX(num_dig, width);
 }
 uint64_t format_sint_width(char *output, int64_t value, int32_t width)
 {
     if (value < 0) {
-        *--output = '-';
+        *output++ = '-';
     }
-    uint64_t num_dig = (value < 0) + (format_int(output, llabs(value)));
-    if (width > 0) {
-        int32_t padding = width - num_dig;
-        if (padding > 0) {
-            memmove(output - padding, output, num_dig);
-            memset(output - padding, '0', padding);
-            output -= padding;
-        }
-    }
-    return num_dig;
+    uint64_t num_dig = format_int_width(output, llabs(value), width);
+    return num_dig + (value < 0);
 }
 
 uint64_t format_sint(char *output, int64_t value)
 {
     if (value < 0) {
-        *--output = '-';
+        *output++ = '-';
     }
     return (value < 0) + (format_int(output, llabs(value)));
 }
@@ -307,39 +292,64 @@ static inline exfloat multiply_exfloat(exfloat *x, exfloat *y)
     r.s = x->s * y->s;
     return r;
 }
-#define TEN7 10000000
-#define TEN6 1000000
-#define TEN5 100000
-#define TEN4 10000
-#define TEN3 1000
-#define TEN2 100
-#define TEN1 10
-
-static int cut(exfloat D, uint32_t parts[3])
+static const uint64_t power_10s[20] = {1UL,
+                                         10UL,
+                                         100UL,
+                                         1000UL,
+                                         10000UL,
+                                         100000UL,
+                                         1000000UL,
+                                         10000000UL,
+                                         100000000UL,
+                                         1000000000UL,
+                                         10000000000UL,
+                                         100000000000UL,
+                                         1000000000000UL,
+                                         10000000000000UL,
+                                         100000000000000UL,
+                                         1000000000000000UL,
+                                         10000000000000000UL,
+                                         100000000000000000UL,
+                                         1000000000000000000UL,
+                                         10000000000000000000UL,
+};
+static int cut(exfloat D, uint32_t parts[3], uint64_t *val)
 {
+    const uint64_t TEN7 = power_10s[7];
+    
     uint64_t tmp = mulhiu64(power10_divs[7] << D.e, D.f);
-    parts[2] = (D.f - tmp * (TEN7 >> D.e)) << D.e;
     parts[0] = mulhiu64(power10_divs[7], tmp);
     parts[1] = tmp - parts[0] * TEN7;
+    parts[2] = (D.f - tmp * (TEN7 >> D.e)) << D.e;
+
     int num_digits = 14;
-    num_digits += calc_digit_len(parts[0]);
+    int first_num_digits = calc_digit_len(parts[0]);
     if (parts[1] == 9999999) {
         parts[1] = 0;
         parts[2] = 0;
         parts[0]++;
+        // need to round up the *value* as well.
+        int tmp_digits = calc_digit_len(tmp);
+        *val = (uint64_t)parts[0] * decimal_max[num_digits+2];
     }
-    return num_digits;
+    else
+    {
+        *val = tmp; 
+    }
+    
+    return num_digits + first_num_digits;
 }
 
 static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_t precision)
 {
-    uint32_t ps[3];
+    uint32_t ps[3] = {0, 0, 0};
+    uint64_t val = 0;
     int q = 64, alpha = 0, gamma = 3;
     int mk = k_comp(w.e + q, alpha, gamma);
     exfloat c_mk = cached_power(mk);
     exfloat D = multiply_exfloat(&w, &c_mk);
-
-    int num_digits = cut(D, ps);
+    
+    int num_digits = cut(D, ps, &val);
     int e = -mk + num_digits - 1;
 
     if (w.s) {
@@ -375,13 +385,12 @@ static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_
             if(precision >= 0) {
                 // Print up to 'precision' digits after decimal
                 int digits_written = 0;
-                for (int i = 0; i < 1 && digits_written < precision; i++) {
-                    int len = format_int(buffer, ps[i]);
-                    if (len > precision - digits_written)
-                        len = precision - digits_written;
-                    buffer += len;
-                    digits_written += len;
-                }
+                int len = format_int(buffer, val);
+                if (len > precision - digits_written)
+                    len = precision - digits_written;
+                buffer += len;
+                digits_written += len;
+            
                 // Pad with zeros if needed
                 while (digits_written < precision) {
                     *buffer++ = '0';
@@ -390,39 +399,16 @@ static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_
             }
             else
             {
-                for (int i = 0; i < 1; i++) {
-                    buffer += format_int(buffer, ps[i]);
-                }    
+                
+                buffer += format_int(buffer, val);            
             }
             
         } else {
             // numbers larger than 10.
-            int cl = calc_digit_len(ps[0]);
+            int cl = calc_digit_len(val);
             int pow10 = cl - (e + 1);
-            uint32_t parta = 0;
-            uint32_t partb = 0;
-            switch (pow10) {
-            case 1:
-                parta = divpow10(ps[0], 1);
-                partb = ps[0] - parta * 10;
-                break;
-            case 2:
-                parta = divpow10(ps[0], 2);
-                partb = ps[0] - parta * 100;
-                break;
-            case 3:
-                parta = divpow10(ps[0], 3);
-                partb = ps[0] - parta * 1000;
-                break;
-            case 4:
-                parta = divpow10(ps[0], 4);
-                partb = ps[0] - parta * 10000;
-                break;
-            default:
-                parta = divpow10(ps[0], 5);
-                partb = ps[0] - parta * 100000;
-                break;
-            }
+            uint64_t parta = divpow10(val, pow10);
+            uint64_t partb = val - parta * power_10s[pow10];
             buffer += format_int_width(buffer, parta, width);
             
             if(precision >= 0)
@@ -432,9 +418,11 @@ static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_
                     return buffer - buffer_start + w.s;
                 }
                 *buffer++ = '.';
-                buffer += format_int_truncate(buffer, partb, precision);
+                int num_digs = format_int(buffer, partb);
+                buffer += MIN(num_digs, precision);
+                memset(buffer, '\0', num_digs - precision);
                 // Pad with zeros if needed
-                while (buffer - buffer_start < precision) {
+                while ((buffer - buffer_start) < precision) {
                     *buffer++ = '0';
                 }
             }
@@ -442,6 +430,7 @@ static int32_t format_float_grisu(exfloat w, char *buffer, int32_t width, int32_
             {   
                 *buffer++ = '.';
                 buffer += format_int(buffer, partb);
+                
             }
             
         }
