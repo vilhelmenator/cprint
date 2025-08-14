@@ -164,7 +164,12 @@ int var_args_test(char *buff, ...)
     return 0;
 }
 
-int cprintf(char *buff, size_t size, var_args *initial_args)
+#define CFORMAT_ERR_OVERFLOW -1
+#define CFORMAT_ERR_SCHEMA   -2
+#define CFORMAT_ERR_ARGS     -3
+enum { CFORMAT_TEXT = 0, CFORMAT_BINARY = 1 };
+
+int cformat(char *buff, size_t size, var_args *initial_args, int mode)
 {
     //
     iter_stack *istack = 0;
@@ -227,12 +232,12 @@ tokenize : {
     //          # controls representation layout.
     //  params n,format,buffer
     //  "%f4[: #.3#e#\n] %f8[2:#] %c2[120:#] %r[2: #\n]",
-    //   #.#
+    //   #.#.
+
     int width = 0, precision = -1;
 
     // Parse width (digits before '.' or type)
-    ch = *++args->format;
-    while (ch >= '0' && ch <= '9') {
+    while (isnum(ch)) {
         width = width * 10 + (ch - '0');
         ch = *++args->format;
     }
@@ -241,14 +246,13 @@ tokenize : {
     if (ch == '.') {
         precision = 0;
         ch = *++args->format;
-        while (ch >= '0' && ch <= '9') {
+        while (isnum(ch)) {
             precision = precision * 10 + (ch - '0');
             ch = *++args->format;
         }
     }
     ct = ch;
     ch = *++args->format;
-    
     switch (ct) {
     case BUFFER: {
         void *buffer_ptr = get_param(args, void *);
@@ -263,7 +267,7 @@ tokenize : {
     }
     case FLOAT: {
         double d = *(double *)get_param(args, double);
-        buff += format_float64_width(buff, d, width, precision);
+        buff += format_float64_prec(buff, d, width, precision);
         goto parse;
     }
     case INTEGER: {
@@ -314,9 +318,9 @@ int main()
     [x] string to int
     [x] hex string to int
     [x] cprintf references
-    [ ] cprintf buffers
-    [ ] cprintf strings
-    [ ] cprintf floats
+    [x] cprintf buffers
+    [x] cprintf strings
+    [x] cprintf floats
     [ ] cprintf binary out
     [ ] cprintf binary from text
     [ ] perf compare
@@ -430,6 +434,14 @@ int main()
      str_to_float("0.1e-1", &outy);
      printf("%e\n", outy);
      */
+    memset(buffA, 0, sizeof(buffA));
+    format_float64(buffA, 32.159265358979323846);
+    memset(buffA, 0, sizeof(buffA));
+    format_float64_prec(buffA, 3.159265358979323846, 1, 3);
+    memset(buffA, 0, sizeof(buffA));
+    format_int64_width(buffA, 20, 4);
+    memset(buffA, 0, sizeof(buffA));
+    format_int64_width(buffA, -20, 4);
     struct local_args
      {
          double d;
@@ -446,9 +458,9 @@ int main()
          double e;
      };
     struct rlocal_args rarguments = {1.2, 2.3, 3.4};
-    struct local_args arguments = {2.0, 2.0, 2323, "%f %f %f\n", &rarguments};
-    var_args arg = {"%f %f %i %r\n", 4, &arguments};
-    int32_t offset = cprintf(buffA, 1024, &arg);
+    struct local_args arguments = {2.0, 2.0, 2323, "%f %f %1.1f\n", &rarguments};
+    var_args arg = {"%4.1f %4.1f %i %r\n", 4, &arguments};
+    int32_t offset = cformat(buffA, 1024, &arg, CFORMAT_TEXT);
 
     printf("%s", buffA);
 
@@ -489,7 +501,7 @@ int main()
     });
     MEASURE_TIME(format, format_float, {
         for (int i = 0; i < 10000000; i++) {
-            format_float64(buffA, 10000000.0 / i);
+            format_float64(buffA, 10000000.0 / (i + 1.0));
             // prevent the optimizer from tossing these loops out.
             __asm__ __volatile__("");
         }
@@ -528,6 +540,43 @@ int main()
     MEASURE_TIME(format, format_snprintf_str, {
         for (int i = 0; i < 10000000; i++) {
             sprintf(buffA, "%s", hex);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__("");
+        }
+    });
+    // test cprintf with var_args
+    
+    var_args va = { "%1.6f\n", 1, NULL };
+    MEASURE_TIME(format, format_cprintf_flt, {
+        for (int i = 0; i < 10000000; i++) {
+            struct { double d; } farg = { 10000000.0 / (i + 1.0) };
+            va.format = "%1.6f\n";
+            va.num_args = 1;
+            va.params = &farg;
+            cformat(buffA, sizeof(buffA), &va, CFORMAT_TEXT);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__("");
+        }
+    });
+    MEASURE_TIME(format, format_cprintf_int, {
+        for (int i = 0; i < 10000000; i++) {
+            struct { int32_t d; } farg = { i };
+            va.format = "%i\n";
+            va.num_args = 1;
+            va.params = &farg;
+            cformat(buffA, sizeof(buffA), &va, CFORMAT_TEXT);
+            // prevent the optimizer from tossing these loops out.
+            __asm__ __volatile__("");
+        }
+    });
+
+    MEASURE_TIME(format, format_cprintf_str, {
+        for (int i = 0; i < 10000000; i++) {
+            struct { const char* d; } farg = { hex };
+            va.format = "%s\n";
+            va.num_args = 1;
+            va.params = &farg;
+            cformat(buffA, sizeof(buffA), &va, CFORMAT_TEXT);
             // prevent the optimizer from tossing these loops out.
             __asm__ __volatile__("");
         }
